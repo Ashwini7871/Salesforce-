@@ -1,0 +1,95 @@
+trigger AccountTrigger on Account (after insert,after update, before Delete)
+{
+    If(Trigger.isAfter){
+        if(Trigger.isInsert || Trigger.isUpdate){
+            AccountWeatherUpdate.AfterInsert(Trigger.new,Trigger.OldMap);
+         AccountTriggerHandler.afterUpdateRelOpp(Trigger.new, TRigger.OldMap);
+            
+        }
+    }
+
+    If(Trigger.isBefore && TRigger.isDelete){
+        
+        AccountHandlerForValidation.ValidationRule(TRigger.old);
+        
+    } 
+}
+-------------------------------------------------------------Handler Class------------------------------------------------------------------------------
+public class AccountWeatherUpdate 
+{
+    public static void AfterInsert(List<Account> AccList,Map<id,Account> OldMap){
+        Set<id> AcID = new Set<id>();
+        for(Account Ac : AccList){    
+            if(Trigger.isInsert && Ac.BillingCity != null || Trigger.isUpdate && Ac.BillingCity != OldMap.get(Ac.id).BillingCity){
+                AcID.add(Ac.id);
+            }
+        }
+        if(System.IsBatch() == false && System.isFuture() == false && AcID.size() > 0){
+            GetWeatherDetails(AcID);
+        } 
+    }
+    @future(callout=true)
+    public static void GetWeatherDetails(Set<id> AccountId) 
+    { 
+        string CityName;
+        List<Account> accounts = [Select id,Name,Weather__c,BillingCity From Account Where id =: AccountId];
+        List<Account> ListtoUpdateWeather = new List<Account>();
+        Try{
+            for (Account acc : accounts) 
+            {
+                CityName = acc.BillingCity;
+                if(CityName != null){
+                    String encodedCityName = EncodingUtil.urlEncode(CityName, 'UTF-8');
+                    String endpointURL = 'http://api.openweathermap.org/data/2.5/weather?q='+encodedCityName+'&appid='+Label.WeatherMapApplicationKey;
+                    HttpRequest request = new HttpRequest();
+                    HttpResponse response = new HttpResponse();
+                    Http http = new Http();
+                    request.setEndpoint(endpointURL);
+                    request.setMethod('GET');
+                    request.setTimeout(120000);
+                    response = http.send(request);
+                    if (response.getStatusCode() == 200)
+                    {
+                        //System.debug(response.getStatus());
+                        Map<String, Object> resultMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+                        Map<String, Object> mainObject = (Map<String, Object>)resultMap.get('main');
+                        Double TempKelvin = Double.valueOf(mainObject.get('temp')); 
+                        // System.debug('temp value'+TempKelvin);
+                        Decimal tempCelsius = tempKelvin - 273.15;
+                        //System.debug (tempCelsius);
+                        
+                        Decimal Temprature = tempCelsius.setScale(2, System.RoundingMode.HALF_UP); 
+                        //System.debug (Temprature);
+                        
+                        Integer roundedValue = Math.round(Temprature);
+                        //System.debug(roundedValue);
+                        
+                        Account AccVar = new Account();
+                        AccVar.id = acc.id;
+                        AccVar.Weather__c = String.ValueOf(roundedValue);
+                        ListtoUpdateWeather.add(AccVar);
+                    } 
+                    else{
+                        System.debug('Error Occured');
+                    }
+                }
+                else
+                {
+                    Account AccVar = new Account();
+                    AccVar.id = acc.id;
+                    AccVar.Weather__c = '';
+                    ListtoUpdateWeather.add(AccVar);
+                }
+                
+            }
+            if(ListtoUpdateWeather.size() > 0){
+                update ListtoUpdateWeather;
+            }
+        }
+        Catch(Exception e)
+        {
+            System.debug('******* Error Occured *****' + e);
+        }
+    }
+    
+}
