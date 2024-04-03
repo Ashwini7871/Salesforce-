@@ -1,0 +1,226 @@
+trigger SalesOrderTrigger on Sales_Order__c (before insert,after insert , after Update , after delete) {
+    if(Trigger.isAfter && Trigger.isInsert){
+        SalesOrderTriggerHandler.AfterInsert(Trigger.new);
+    }
+    if(Trigger.isAfter && Trigger.isUpdate){
+        SalesOrderTriggerHandler.afterUpdate(Trigger.new , Trigger.oldMap);
+    }
+    if(Trigger.isAfter && Trigger.isdelete){
+      SalesOrderTriggerHandler.AfterInsert(Trigger.old);
+
+    }
+
+
+============================================================================================TRIGGER HANDLER============================================================================================================================================
+public class SalesOrderTriggerHandler 
+{
+    public static void AfterInsert(List<Sales_Order__c> newValue)
+    {
+        decimal totalAmount=0;
+        decimal OpptotalAmount=0;
+        Id ActivityId;
+        Id OpportunityId;
+        
+        for( Sales_Order__c so :newValue)
+        {
+            ActivityId=so.Activity__c; 
+            OpportunityId=so.Opportunity__c;  
+        } 
+        List<Sales_Order__c> salesOrderQuery = [SELECT id, Name,Order_Sub_total__c FROM Sales_Order__c WHERE Activity__c =:ActivityId];
+        
+        List<Sales_Order__c> OppsalesOrderQuery = [SELECT id, Name,Order_Sub_total__c FROM Sales_Order__c WHERE Opportunity__c =:OpportunityId];
+        
+        if(ActivityId != null)
+        {
+            if(salesOrderQuery.size()>0){
+                for(Sales_Order__c ActSo :salesOrderQuery){
+                    totalAmount += ActSo.Order_Sub_total__c;           
+                }
+            }
+            Activity__c act = new Activity__c();
+            act.Id =ActivityId;
+            act.All_Sales_Orders_Total__c= totalAmount;
+            update act;
+        }
+        if(OpportunityId != null)
+        {  
+            if(OppsalesOrderQuery.size()>0)
+            {
+                for(Sales_Order__c OppSo :OppsalesOrderQuery)
+                {
+                    OpptotalAmount += OppSo.Order_Sub_total__c; // Adding Sales order Subtotal Amount to variable 
+                }
+            }
+            // Updating Opportunity Record
+            Opportunity opp = new Opportunity();
+            opp.id = OpportunityId;
+            opp.All_Sales_Orders_Total__c = OpptotalAmount;
+            
+            update opp;
+        }
+    }
+    public static void afterUpdate(List<Sales_Order__c> newValue,Map<id,Sales_Order__c> oldValue)
+    {
+        Boolean isChanged = false; 
+        decimal totalAmount=0;
+        decimal OpptotalAmount=0;
+        Id ActivityId;
+        Id OpportunityId;
+        
+        for( Sales_Order__c so :newValue)
+        {
+            if(so.Order_Sub_total__c != oldValue.get(so.id).Order_Sub_total__c){
+                isChanged = true; 
+                ActivityId=so.Activity__c;
+                OpportunityId=so.Opportunity__c;
+            }
+        }
+        if(isChanged == true)
+        {
+            List<Sales_Order__c> salesOrderQuery = [SELECT id, Name,Order_Sub_total__c FROM Sales_Order__c WHERE Activity__c =:ActivityId];
+            
+            List<Sales_Order__c> OppsalesOrderQuery = [SELECT id, Name,Order_Sub_total__c FROM Sales_Order__c WHERE Opportunity__c =:OpportunityId];
+            
+            if(ActivityId != null){
+                
+                if(salesOrderQuery.size()>0)
+                {
+                    for(Sales_Order__c ActSo :salesOrderQuery){
+                        totalAmount += ActSo.Order_Sub_total__c;          
+                    }
+                }
+                Activity__c act = new Activity__c();
+                act.Id =ActivityId;
+                act.All_Sales_Orders_Total__c= totalAmount;
+                update act;
+            }
+            if(OpportunityId != null){
+                
+                if(OppsalesOrderQuery.size()>0){
+                    for(Sales_Order__c OppSo :OppsalesOrderQuery)
+                    {
+                        OpptotalAmount += OppSo.Order_Sub_total__c; 
+                    }
+                    
+                } 
+               
+                Opportunity opp = new Opportunity();
+                opp.id = OpportunityId;
+                opp.All_Sales_Orders_Total__c = OpptotalAmount;
+                
+                update opp;
+            }
+        }
+    }
+}
+===============================================================================================================TEST CLASS=============================================================================================================================
+/*<!-- =============================================
+*Class Name           : SalesOrderTriggerHandlerTest
+*Description          : After Insert, update, Delete Sales Order Records sum of order subtototal field value updating in Activtiy and opportunity All Sales order total field.
+*Company              : Merfantz Technologies Pvt Ltd
+*Date                 : 7th December, 2023
+*Version              : 1.0
+*Ticket No            : 123872
+============================================= -->*/
+@isTest()
+public class SalesOrderTriggerHandlerTest {
+    @isTest
+    static void TestAfterInsert(){
+        
+        InternalConfig__c cnfig = new InternalConfig__c();
+        cnfig.Name = 'Activity';
+        cnfig.Enable__c = true;
+        insert cnfig;
+        
+        Account a = new Account(
+            Name = 'Test Account', BillingCity = 'Hartland', BillingState = 'Wisconsin', BillingCountry = 'United States', 
+            BillingPostalCode = '55009', BillingStreet = '1234 First St.');
+        insert a;
+        
+        property__c prop = new property__c();
+        prop.name='First  Property';
+        prop.Account__c=a.id;
+        insert prop;
+        
+        Activity__c act =new Activity__c();
+        act.Name='test';   
+        act.Property__c=prop.id;
+        act.Account__c=a.id;
+        act.Type__c='Maintenance';
+        act.Status__c='In Progress';
+        insert act;
+        
+        //salesorder
+        Quote__c qt = new Quote__c();
+        qt.Account__c = a.Id;
+        qt.Service_Type__c	='Safety System (Installation)';
+        qt.Enquiry_source__c='New Customer/Website/Phone';
+        qt.Installation_Type__c='Install (New Build)';
+        qt.Sales_Pipeline_Stage__c='Quote Sent';
+        qt.Initial_Enquiry_Stage__c = 'Client Is Tendering Project';
+        Id RecType = Schema.SObjectType.Quote__c.getRecordTypeInfosByName().get('Exclude Price Per').getRecordTypeId();
+        qt.RecordtypeId= RecType;
+        insert qt;
+        
+        Quote__c qt1 = new Quote__c();
+        qt1.Account__c = a.Id;
+        qt1.Service_Type__c	='Safety System (Installation)';
+        qt1.Enquiry_source__c='New Customer/Website/Phone';
+        qt1.Installation_Type__c='Install (New Build)';
+        qt1.Initial_Enquiry_Stage__c = 'Client Is Tendering Project';
+        qt1.Sales_Pipeline_Stage__c='Quote Sent';
+        Id RecType1 = Schema.SObjectType.Quote__c.getRecordTypeInfosByName().get('Exclude Price Per').getRecordTypeId();
+        qt.RecordtypeId= RecType1;
+        insert qt1;
+        
+        Contact con = new Contact();
+        con.AccountId = a.Id;
+        con.LastName='TestContact';
+        insert con;
+        
+        Test.startTest();
+             
+        Opportunity opp = new Opportunity();
+        opp.Name ='testOpportunity';
+        opp.AccountId=a.Id;
+        opp.LeadSource='Existing Customer';
+        opp.StageName='Prospecting';
+        opp.CloseDate=System.Today();
+        insert opp;
+       
+        
+        Sales_Order__c sOrder =  new Sales_Order__c ();
+        sOrder.Quote__c = qt.Id;
+        sOrder.Account__c = a.id;
+        sOrder.Activity__c=act.Id;
+        sorder.Opportunity__c = opp.id;
+        sOrder.Status__c='Valid';
+        sOrder.VAT_Type__c ='Non-DRC';
+        sOrder.Order_Number__c='1234';
+        sOrder.Edited_Description_and_Value__c=true;
+        sOrder.Custom_Value__c=150.0;
+        sOrder.Contact_who_decided_to_order_this_quote__c= con.Id;
+        insert sOrder;
+        
+        Sales_Order__c sOrder1 =  new Sales_Order__c ();
+        sOrder1.id = sOrder.id;
+        sOrder1.Quote__c = qt1.Id;
+        sOrder1.Account__c = a.id;
+        sOrder1.Activity__c = act.id;
+        sOrder1.Opportunity__c=opp.Id;
+        sOrder1.Status__c='Valid';
+        sOrder1.VAT_Type__c ='Non-DRC';
+        sOrder1.Order_Number__c='12345';
+        sOrder1.Edited_Description_and_Value__c=true;
+        sOrder1.Custom_Value__c=180.0;
+        sOrder1.Contact_who_decided_to_order_this_quote__c= con.Id;
+        update sOrder1;
+        
+        Test.stopTest();
+        
+        
+        
+        
+        
+    }
+}
