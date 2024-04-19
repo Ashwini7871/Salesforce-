@@ -1,0 +1,52 @@
+trigger UpdateRelatedCaseCount on Case (after insert) {
+
+    if(Trigger.isAfter && Trigger.isInsert){
+        UpdateRelatedCaseCountHandler.AfterInsert(Trigger.new);
+        
+    }
+}
+==========================================================================================TRIGGER HANDLER====================================================================================================================================
+public class UpdateRelatedCaseCountHandler {
+    public static void AfterInsert(List<Case> newVal){
+        List<Case> casesList = new List<Case>(); 
+        Integer count=0;
+        Map<Id,Case> MapVal = new Map<Id,Case>();
+        Set<Id> accId = new Set<Id>();
+        try{
+            for(Case cse : newVal){
+                accId.add(cse.AccountId);
+            }
+            System.debug('accID=====>'+accId);
+            
+            List<Case> cases =[SELECT Id,CaseNumber,AccountId FROM Case Where AccountId =:accId];
+            System.debug('Cases====>'+cases);
+            
+            if(cases !=null){
+                for(Case c : cases){
+                    count=count+1;
+                    MapVal.put(c.Id,c);
+                    
+                }
+                System.debug('count=====>'+count);
+                System.debug('count=====>'+MapVal);
+                
+                for(Case cs :MapVal.values()){
+                    cs.Related_Case_Count__c=count;
+                  casesList.add(cs);
+
+                }
+                
+                }
+            if(casesList.size()>0){
+                Update casesList;
+                
+            }
+           
+        }
+        catch(exception e){
+            System.debug('exception=====>'+e);
+        }
+        
+    }
+    
+}
